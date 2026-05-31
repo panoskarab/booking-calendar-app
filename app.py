@@ -39,7 +39,7 @@ def generate_ics(df):
         time_frame = str(row.get('Time frame', '')).strip()
         
         # Αγνόησε γραμμές που είναι κενές ή περιέχουν σύνολα ("Total")
-        if not guest or guest.lower() == 'nan' or guest.lower() == 'total' or not time_frame or time_frame.lower() == 'nan':
+        if not guest or guest.lower() == 'nan' or 'total' in guest.lower() or not time_frame or time_frame.lower() == 'nan':
             continue
             
         start_date, end_date = parse_dates(time_frame)
@@ -81,22 +81,29 @@ if uploaded_file is not None:
         st.error(f"Σφάλμα κατά την ανάγνωση του αρχείου: {e}")
 
     if df is not None and not df.empty:
-        # Καθαρισμός και εμφάνιση
-        df = df.dropna(subset=['Guest', 'Time frame'], how='all')
-        st.success("Το αρχείο διαβάστηκε με επιτυχία!")
-        st.dataframe(df[['Guest', 'Time frame', 'People']].head(10))
+        # --- Η ΛΥΣΗ ΤΟΥ ΠΡΟΒΛΗΜΑΤΟΣ ΕΙΝΑΙ ΕΔΩ ---
+        # Καθαρίζουμε τα ονόματα των στηλών από κρυφά κενά και αλλαγές γραμμής (enter)
+        df.columns = df.columns.astype(str).str.strip().str.replace('\n', '')
         
-        # Παραγωγή του αρχείου ημερολογίου
-        ics_data = generate_ics(df)
-        
-        st.write("---")
-        st.write("### Το Ημερολόγιο είναι έτοιμο!")
-        st.write("Κατέβασε το αρχείο. Στο κινητό σου θα περάσει τις κρατήσεις αυτόματα. Μπορείς επίσης να στείλεις αυτό το αρχείο στους πελάτες/συνεργάτες σου.")
-        
-        st.download_button(
-            label="📲 Λήψη Αρχείου Ημερολογίου (.ics)",
-            data=ics_data,
-            file_name="kratiseis.ics",
-            mime="text/calendar",
-            type="primary"
-        )
+        # Ελέγχουμε αν όντως υπάρχουν οι στήλες μετά τον καθαρισμό
+        if 'Guest' in df.columns and 'Time frame' in df.columns:
+            df = df.dropna(subset=['Guest', 'Time frame'], how='all')
+            st.success("Το αρχείο διαβάστηκε με επιτυχία!")
+            st.dataframe(df[['Guest', 'Time frame', 'People']].head(10))
+            
+            # Παραγωγή του αρχείου ημερολογίου
+            ics_data = generate_ics(df)
+            
+            st.write("---")
+            st.write("### Το Ημερολόγιο είναι έτοιμο!")
+            st.write("Κατέβασε το αρχείο. Στο κινητό σου θα περάσει τις κρατήσεις αυτόματα. Μπορείς επίσης να στείλεις αυτό το αρχείο στους πελάτες/συνεργάτες σου.")
+            
+            st.download_button(
+                label="📲 Λήψη Αρχείου Ημερολογίου (.ics)",
+                data=ics_data,
+                file_name="kratiseis.ics",
+                mime="text/calendar",
+                type="primary"
+            )
+        else:
+            st.error("Δεν βρέθηκαν οι στήλες 'Guest' και 'Time frame'. Ελέγξτε αν το αρχείο έχει διαφορετικές επικεφαλίδες.")
