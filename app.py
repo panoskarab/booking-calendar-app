@@ -39,7 +39,7 @@ def generate_ics(df):
         time_frame = str(row.get('Time frame', '')).strip()
         
         # Αγνόησε γραμμές που είναι κενές ή περιέχουν σύνολα ("Total")
-        if not guest or guest.lower() == 'nan' or 'total' in guest.lower() or not time_frame or time_frame.lower() == 'nan':
+        if not guest or guest.lower() in ['nan', 'none'] or 'total' in guest.lower() or not time_frame or time_frame.lower() in ['nan', 'none']:
             continue
             
         start_date, end_date = parse_dates(time_frame)
@@ -57,6 +57,22 @@ def generate_ics(df):
     ics_content += "END:VCALENDAR"
     return ics_content
 
+def fix_dataframe_headers(df):
+    """Ψάχνει να βρει σε ποια γραμμή κρύβονται πραγματικά οι επικεφαλίδες."""
+    # Αρχικός καθαρισμός 
+    df.columns = df.columns.astype(str).str.strip().str.replace('\n', '')
+    if 'Guest' in df.columns and 'Time frame' in df.columns:
+        return df
+        
+    # Αν δεν τα βρει στην 1η γραμμή, σκανάρει τις 10 πρώτες γραμμές
+    for i, row in df.head(10).iterrows():
+        row_strs = row.astype(str).str.strip().str.replace('\n', '')
+        if 'Guest' in row_strs.values and 'Time frame' in row_strs.values:
+            # Ορίζει αυτή τη γραμμή ως επικεφαλίδα και διαγράφει τις προηγούμενες άχρηστες
+            df.columns = row_strs
+            return df.iloc[i+1:].reset_index(drop=True)
+    return df
+
 # --- Διεπαφή Χρήστη ---
 st.set_page_config(page_title="Ενημέρωση Κρατήσεων", page_icon="📅")
 st.title("📅 Ενημέρωση Κρατήσεων")
@@ -68,24 +84,23 @@ if uploaded_file is not None:
     df = None
     try:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            # Η παράμετρος engine='python' και sep=None βοηθάει αν το CSV έχει ελληνικό διαχωριστικό (;) αντί για (,)
+            df = pd.read_csv(uploaded_file, sep=None, engine='python')
         elif uploaded_file.name.endswith('.xlsx'):
             df = pd.read_excel(uploaded_file)
         elif uploaded_file.name.endswith('.pdf'):
             with pdfplumber.open(uploaded_file) as pdf:
                 table = pdf.pages[0].extract_table()
                 if table:
-                    # Η πρώτη γραμμή είναι οι κεφαλίδες
                     df = pd.DataFrame(table[1:], columns=table[0])
     except Exception as e:
         st.error(f"Σφάλμα κατά την ανάγνωση του αρχείου: {e}")
 
     if df is not None and not df.empty:
-        # --- Η ΛΥΣΗ ΤΟΥ ΠΡΟΒΛΗΜΑΤΟΣ ΕΙΝΑΙ ΕΔΩ ---
-        # Καθαρίζουμε τα ονόματα των στηλών από κρυφά κενά και αλλαγές γραμμής (enter)
-        df.columns = df.columns.astype(str).str.strip().str.replace('\n', '')
+        # Χρησιμοποιούμε τον "ντετέκτιβ" επικεφαλίδων
+        df = fix_dataframe_headers(df)
         
-        # Ελέγχουμε αν όντως υπάρχουν οι στήλες μετά τον καθαρισμό
+        # Τώρα είμαστε σίγουροι ότι βρήκε τις στήλες
         if 'Guest' in df.columns and 'Time frame' in df.columns:
             df = df.dropna(subset=['Guest', 'Time frame'], how='all')
             st.success("Το αρχείο διαβάστηκε με επιτυχία!")
@@ -96,7 +111,7 @@ if uploaded_file is not None:
             
             st.write("---")
             st.write("### Το Ημερολόγιο είναι έτοιμο!")
-            st.write("Κατέβασε το αρχείο. Στο κινητό σου θα περάσει τις κρατήσεις αυτόματα. Μπορείς επίσης να στείλεις αυτό το αρχείο στους πελάτες/συνεργάτες σου.")
+            st.write("Κατέβασε το αρχείο. Στο κινητό σου θα περάσει τις κρατήσεις αυτόματα.")
             
             st.download_button(
                 label="📲 Λήψη Αρχείου Ημερολογίου (.ics)",
@@ -106,4 +121,4 @@ if uploaded_file is not None:
                 type="primary"
             )
         else:
-            st.error("Δεν βρέθηκαν οι στήλες 'Guest' και 'Time frame'. Ελέγξτε αν το αρχείο έχει διαφορετικές επικεφαλίδες.")
+            st.error("Δεν βρέθηκαν οι στήλες 'Guest' και 'Time frame' ούτε στις επικεφαλίδες ούτε στις πρώτες γραμμές.")
